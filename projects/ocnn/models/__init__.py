@@ -12,7 +12,8 @@ from .unet import UNet
 from .hrnet import HRNet
 from .autoencoder import AutoEncoder
 from .ounet import OUNet
-from .image2shape import Image2Shape
+# from .image2shape import Image2Shape  # 需要torchvision，暂时注释
+from .scorer_net import ScorerNet
 
 
 __all__ = [
@@ -23,7 +24,8 @@ __all__ = [
     'HRNet',
     'AutoEncoder',
     'OUNet',
-    'Image2Shape',
+    # 'Image2Shape',  # 需要torchvision
+    'ScorerNet',
 ]
 
 classes = __all__
