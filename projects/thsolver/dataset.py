@@ -10,6 +10,7 @@ import torch
 import torch.utils.data
 import numpy as np
 from tqdm import tqdm
+import json
 
 
 def read_file(filename):
@@ -28,6 +29,7 @@ class Dataset(torch.utils.data.Dataset):
     self.in_memory = in_memory
     self.read_file = read_file
     self.take = take  # 训练/测试时选取的样本数量
+    self.rotation_matrices = self._load_rotation_matrices()  # 加载旋转矩阵
 
     self.filenames, self.labels, self.tool_params= self.load_filenames()  # 加载文件名、标签和刀具参数
     if self.in_memory:
@@ -37,6 +39,34 @@ class Dataset(torch.utils.data.Dataset):
 
   def __len__(self):
     return len(self.filenames)  # 返回样本数量
+  
+  def _load_rotation_matrices(self):
+        """加载JSON文件中的旋转矩阵到内存"""
+        json_path = os.path.join(os.path.dirname(
+            __file__), 'rotation_matrices.json')
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            rotation_matrices = []
+            for i in range(338):  # 假设有110个旋转矩阵
+                key = f"ori_{i:03d}"
+                if key in data:
+                    matrix = np.array(
+                        data[key]['rotation_matrix'], dtype=np.float32)
+                    rotation_matrices.append(torch.from_numpy(matrix))
+                else:
+                    # 如果缺少某个索引，用单位矩阵填充
+                    rotation_matrices.append(torch.eye(3, dtype=torch.float32))
+
+            # 堆叠成 (110, 3, 3) 的tensor
+            rotation_matrices = torch.stack(rotation_matrices)
+            print(f"成功加载 {len(rotation_matrices)} 个旋转矩阵")
+            return rotation_matrices
+        except Exception as e:
+            print(f"加载旋转矩阵失败: {e}")
+            # 返回 110 个单位矩阵作为 fallback
+            return torch.eye(3, dtype=torch.float32).unsqueeze(0).repeat(338, 1, 1)
 
   def __getitem__(self, idx):
     sample = (self.samples[idx] if self.in_memory else
@@ -44,6 +74,7 @@ class Dataset(torch.utils.data.Dataset):
     output = self.transform(sample, idx)  # 数据增强和octree构建
     output['label'] = self.labels[idx]  # 添加标签
     output['filename'] = self.filenames[idx]  # 添加文件名
+    output['rotation_matrices'] = self.rotation_matrices  # 添加旋转矩阵
     filename = self.filenames[idx]
     basename = os.path.basename(filename)
 

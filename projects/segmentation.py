@@ -523,6 +523,13 @@ class SegSolver(Solver):
     # -----------------------------
     def train_step(self, batch):
         # 注意：大量打印会拖慢训练，按需开启
+        
+        print("--------------------------------")
+        print("train_step")
+        print("--------------------------------")
+        print("batch: ", batch)
+        print("--------------------------------")
+        
         batch = self.process_batch(batch, self.FLAGS.DATA.train)
         logit, label = self.model_forward(batch)
 
