@@ -1,0 +1,90 @@
+# --------------------------------------------------------
+# Octree-based Sparse Convolutional Neural Networks
+# Copyright (c) 2022 Peng-Shuai Wang <wangps@hotmail.com>
+# Licensed under The MIT License [see LICENSE for details]
+# Written by Peng-Shuai Wang
+# --------------------------------------------------------
+
+SOLVER:
+  run: train
+  gpu: (1,)
+  type: sgd
+  best_val: min:test/model_score
+
+  logdir: logs/seg_shapenet/02691156_airplane_d5
+  max_epoch: 300
+  test_every_epoch: 10
+
+  # lr_type: cos
+  milestones: (120,180,240)
+  ckpt_num: 20
+
+DATA:
+  train:
+    name: shapenet
+
+    # octree building
+    depth: 5
+    full_depth: 2
+
+    # transformation
+    orient_normal: xyz
+
+    # data_2.0 augmentations
+    distort: True
+    angle: (0, 5, 0)
+    interval: (1, 1, 1)
+    scale: 0.25
+    jitter: 0.25
+    uniform: True
+
+    # data_2.0 loading
+    location: data_2.0/points
+    filelist: data_2.0/filelist/models_train_val.txt
+    batch_size: 8
+    shuffle: True
+    # num_workers: 0
+
+  test:
+    name: shapenet
+
+    # octree building
+    depth: 5
+    full_depth: 2
+
+    # transformation
+    orient_normal: xyz
+
+    # data_2.0 augmentations
+    distort: True   # False -> no data_2.0 augmentation
+    angle: (0, 5, 0)
+    interval: (1, 1, 1)
+    scale: 0.25
+    jitter: 0.25
+    uniform: True
+
+    # data_2.0 loading
+    location: data_2.0/points
+    filelist: data_2.0/filelist/models_test.txt
+    batch_size: 1
+    shuffle: True
+    # num_workers: 0
+
+MODEL:
+  name: unet
+  feature: ND
+  interp: 'linear'
+  channel: 4
+  nout: 6
+  use_decoder: false
+  pyramid_levels: (0)
+  tool_fusion: 'concat'
+  use_attention_pool: false
+  use_tanh_head: true
+
+
+
+
+LOSS:
+  mask: -1
+  num_class: 2

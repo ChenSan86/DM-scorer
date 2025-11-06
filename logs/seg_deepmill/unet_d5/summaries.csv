@@ -1,0 +1,3 @@
+names, models, mean_error(rad), max_error(rad), std(rad)
+train_num, 4451
+test_num, 1112
