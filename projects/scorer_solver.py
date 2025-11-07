@@ -172,10 +172,10 @@ class ScorerSolver(Solver):
     def rmse(self, score_pred, score_gt):
         """均方根误差"""
         return torch.sqrt(torch.mean((score_pred - score_gt) ** 2)).item()
-
+#TODO: verify
     def relative_error(self, score_pred, score_gt):
         """相对误差（百分比）"""
-        rel_err = torch.abs(score_pred - score_gt) / (score_gt.abs() + 1e-6)
+        rel_err = torch.abs(score_pred - score_gt) / (score_pred.abs() + 1e-6)
         return (rel_err.mean() * 100).item()
 
     # ==================== Train / Test Steps ====================

@@ -34,7 +34,7 @@ categories = ['models']
 names = ['models']
 train_num = [4451]
 test_num = [1112]
-max_epoches = [300]
+max_epoches = [600]
 
 
 def build_cmd_list(
