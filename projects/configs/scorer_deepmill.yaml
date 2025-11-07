@@ -5,7 +5,7 @@
 
 SOLVER:
   run: train
-  gpu: (0,)
+  gpu: (3,)
   type: adam              # 使用Adam优化器
   lr: 0.001               # 学习率
   weight_decay: 0.0001    # 权重衰减

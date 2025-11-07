@@ -114,7 +114,7 @@ class Dataset(torch.utils.data.Dataset):
         return result  # 返回指定数量的文件名、标签和刀具参数
 
 
-def read_six_dim_vector(model_id, result_dir='/home/xinguanze/project/ex_4_dataset_making/result'):
+def read_six_dim_vector(model_id, result_dir='/home/group1/xinguanze/project/deepmill_scorer/DM-scorer/projects/data_2.0/result'):
     """
     根据模型ID，从result文件夹中读取338维向量，保留原始数据（不归一化）
     :param model_id: 模型ID（如 00181080_1b7d16dab26af7058f098574_trimesh_000）
