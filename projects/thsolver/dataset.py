@@ -83,7 +83,9 @@ class Dataset(torch.utils.data.Dataset):
         label = read_six_dim_vector(model_name)
         # 这里确保刀具参数添加到输出中
         output['labels'] = np.array(label).astype(np.float32)
-        output['tool_params'] = self.tool_params[idx]  # 假设在加载数据时已经填充
+        raw_tool = self.tool_params[idx]  # 列表/字符串
+        tool_vals = [float(v) for v in raw_tool]
+        output['tool_params'] = torch.tensor(tool_vals, dtype=torch.float32)  # [4]
         return output  # 返回样本字典
 
     def load_filenames(self):

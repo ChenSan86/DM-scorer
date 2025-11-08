@@ -21,6 +21,31 @@ class ScorerSolver(Solver):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        # ============ 自动保存最优权重（与thsolver/solver.py风格一致） ============
+        # 优先使用配置项 FLAGS.SOLVER.best_val（如："min:mae" 或 "max:acc"）。
+        # 若未配置，则在本类中默认使用 test/loss 最小化作为最优标准。
+        self._best_mode = 'min'   # 'min' 或 'max'
+        self._best_key = 'test/loss'
+        best_val_cfg = getattr(self.FLAGS.SOLVER, 'best_val', '')
+        if isinstance(best_val_cfg, str) and ':' in best_val_cfg:
+            mode, key = best_val_cfg.split(':', 1)
+            mode = mode.strip().lower()
+            key = key.strip()
+            # 兼容配置里写成 'test/mae' 的情况
+            if key.startswith('test/'):
+                metric_name = key
+            else:
+                metric_name = f'test/{key}'
+            if mode in ('min', 'max'):
+                self._best_mode = mode
+                self._best_key = metric_name
+
+        self._best_value = float('inf') if self._best_mode == 'min' else -float('inf')
+        # 文件名包含指标，便于区分
+        safe_key = self._best_key.replace('/', '_')
+        self._best_ckpt_path = os.path.join(self.FLAGS.SOLVER.logdir, f'best_{safe_key}.pth')
+        # ======================================================================
+
     # ==================== Model / Dataset ====================
     def get_model(self, flags):
         """创建评估器模型"""
@@ -75,6 +100,24 @@ class ScorerSolver(Solver):
                             for row in x], dtype=np.float32)
 
         return torch.from_numpy(x_np).to(device='cuda')
+
+    # ==================== 最优权重保存辅助 ====================
+    def _is_better(self, cur):
+        if cur is None:
+            return False
+        return (cur < self._best_value) if self._best_mode == 'min' else (cur > self._best_value)
+
+    def _get_model_state(self):
+        model = self.model.module if hasattr(self.model, 'module') else self.model
+        return model.state_dict()
+
+    def _save_best(self, epoch):
+        # 仅主进程保存
+        if not getattr(self, 'is_master', True):
+            return
+        os.makedirs(os.path.dirname(self._best_ckpt_path), exist_ok=True)
+        torch.save(self._get_model_state(), self._best_ckpt_path)
+        tqdm.write(f"=> Saved best model to {self._best_ckpt_path} | epoch {epoch} | {self._best_key}={self._best_value:.6f}")
 
     # ==================== Training Strategy ====================
     def sample_rotation_indices(self, B, strategy='uniform'):
@@ -287,6 +330,17 @@ class ScorerSolver(Solver):
                    f'MAE: {mae:.6f} | '
                    f'RMSE: {rmse:.6f} | '
                    f'Rel.Err: {rel_err:.2f}%')
+
+        # 评估并自动保存当前最优模型（与基类保存机制互补；可共存）
+        cur_metric = avg.get(self._best_key)
+        cur_metric = _to_float(cur_metric, default=None)
+        if cur_metric is None:
+            # 若未能从tracker中取到配置的指标，则回退用 test/loss
+            cur_metric = loss
+
+        if self._is_better(cur_metric):
+            self._best_value = cur_metric
+            self._save_best(epoch)
 
 
 if __name__ == "__main__":
