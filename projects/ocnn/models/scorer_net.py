@@ -19,7 +19,7 @@ class ScorerNet(nn.Module):
         - octree: Octree对象
         - depth: int
         - query_pts: [N_pts, 4] 查询点
-        - rotation_matrix: [B, 3, 3] 旋转矩阵（姿态）
+        - euler_angles: [B, 2] 欧拉角对（pitch, roll）
         - tool_params: [B, 4] 刀具参数
 
     输出:
@@ -82,10 +82,12 @@ class ScorerNet(nn.Module):
             nn.ReLU(inplace=True),
         )
 
-        # ============ 2. 旋转矩阵特征提取 ============
-        self.rotation_encoder = nn.Sequential(
-            nn.Flatten(),  # [B, 3, 3] -> [B, 9]
-            nn.Linear(9, 64),
+        # ============ 2. 欧拉角特征提取 ============
+        # ============ 2. 欧拉角特征提取 ============
+        self.euler_encoder = nn.Sequential(
+            nn.Linear(2, 16),
+            nn.ReLU(inplace=True),
+            nn.Linear(16, 64),
             nn.ReLU(inplace=True),
             nn.BatchNorm1d(64),
             nn.Dropout(0.2),
@@ -186,7 +188,7 @@ class ScorerNet(nn.Module):
         octree: Octree,
         depth: int,
         query_pts: torch.Tensor,     # [N_pts, 4]
-        rotation_matrix: torch.Tensor,  # [B, 3, 3]
+        euler_angles: torch.Tensor,  # [B, 2] 欧拉角对（pitch, roll）
         tool_params: torch.Tensor    # [B, 4]
     ):
         """
@@ -195,14 +197,14 @@ class ScorerNet(nn.Module):
         Returns:
             score: [B] 评分
         """
-        B = rotation_matrix.size(0)
+        B = euler_angles.size(0)
 
         # 1. 提取几何特征
         geo_feat = self.encode_geometry(
             data, octree, depth, query_pts)  # [B, geo_channels]
 
-        # 2. 提取旋转特征
-        rot_feat = self.rotation_encoder(rotation_matrix)  # [B, rot_channels]
+        # 2. 提取欧拉角特征
+        rot_feat = self.euler_encoder(euler_angles)  # [B, rot_channels]
 
         # 3. 提取刀具特征
         tool_feat = self.tool_encoder(tool_params)  # [B, tool_channels]

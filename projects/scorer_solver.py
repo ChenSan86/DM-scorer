@@ -81,8 +81,8 @@ class ScorerSolver(Solver):
         # 转换其他字段
         if 'labels' in batch:
             batch['labels'] = batch['labels'].cuda(non_blocking=True)
-        if 'rotation_matrices' in batch:
-            batch['rotation_matrices'] = batch['rotation_matrices'].cuda(
+        if 'euler_angles' in batch:
+            batch['euler_angles'] = batch['euler_angles'].cuda(
                 non_blocking=True)
 
         return batch
@@ -172,13 +172,13 @@ class ScorerSolver(Solver):
 
         B = batch['labels'].size(0)
 
-        # 采样旋转矩阵索引
+        # 采样欧拉角索引
         if rot_indices is None:
             rot_indices = self.sample_rotation_indices(B, strategy='uniform')
 
-        # 获取对应的旋转矩阵
-        rotation_matrices = batch['rotation_matrices']  # [338, 3, 3]
-        selected_rotations = rotation_matrices[rot_indices]  # [B, 3, 3]
+        # 获取对应的欧拉角对
+        euler_angles_all = batch['euler_angles']  # [338, 2]
+        selected_eulers = euler_angles_all[rot_indices]  # [B, 2]
 
         # 获取刀具参数
         tool_params = self._to_cuda_float_tensor(
@@ -187,7 +187,7 @@ class ScorerSolver(Solver):
         # 前向传播
         score_pred = self.model.forward(
             data, octree, octree.depth, query_pts,
-            selected_rotations, tool_params
+            selected_eulers, tool_params
         )  # [B]
 
         # 获取对应的GT分数
