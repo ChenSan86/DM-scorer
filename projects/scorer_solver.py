@@ -73,33 +73,80 @@ class ScorerSolver(Solver):
 
     # ==================== Batch Processing ====================
     def process_batch(self, batch, flags):
-        """处理batch，移到GPU"""
+        """处理batch，移到GPU。稳健处理 list/ndarray/tensor 情况。"""
+        # Octree 与 Points
         if 'octree' in batch:
             batch['octree'] = batch['octree'].cuda(non_blocking=True)
+        if 'points' in batch:
             batch['points'] = batch['points'].cuda(non_blocking=True)
 
-        # 转换其他字段
+        # 统一转换到 CUDA 的小工具
+        def _to_cuda(x, dtype=torch.float32):
+            import numpy as np
+            if isinstance(x, torch.Tensor):
+                return x.to(device='cuda', dtype=dtype, non_blocking=True)
+            if isinstance(x, np.ndarray):
+                return torch.from_numpy(x).to(device='cuda', dtype=dtype, non_blocking=True)
+            if isinstance(x, list):
+                try:
+                    tx = torch.tensor(x, dtype=dtype)
+                except Exception:
+                    # 退而求其次：逐元素转 tensor 再 stack
+                    tx = torch.stack([torch.as_tensor(e) for e in x], dim=0).to(dtype=dtype)
+                return tx.to(device='cuda', non_blocking=True)
+            return x
+
+        # labels: 期望 [B, 338]，用于数值回归
         if 'labels' in batch:
-            batch['labels'] = batch['labels'].cuda(non_blocking=True)
+            batch['labels'] = _to_cuda(batch['labels'], dtype=torch.float32)
+
+        # euler_angles: 数据集提供 [338, 2]，但 DataLoader 可能 collate 成 [B, 338, 2] 或 list
         if 'euler_angles' in batch:
-            batch['euler_angles'] = batch['euler_angles'].cuda(
-                non_blocking=True)
+            ea = batch['euler_angles']
+            import numpy as np
+            if isinstance(ea, list):
+                # 列表情况：通常是 [B, 338, 2] 的 list 或 [338, 2]
+                try:
+                    ea = torch.tensor(ea, dtype=torch.float32)
+                except Exception:
+                    ea = torch.stack([torch.as_tensor(e, dtype=torch.float32) for e in ea], dim=0)
+            elif isinstance(ea, np.ndarray):
+                ea = torch.from_numpy(ea.astype(np.float32))
+
+            if isinstance(ea, torch.Tensor):
+                # 若为 [B, 338, 2]，取 batch 内第一份（公共查表）
+                if ea.dim() == 3 and ea.size(-2) == 338 and ea.size(-1) == 2:
+                    ea = ea[0]
+                # 若为展平的一维，尝试 reshape
+                if ea.dim() == 1 and ea.numel() == 338 * 2:
+                    ea = ea.view(338, 2)
+                ea = ea.to(device='cuda', dtype=torch.float32, non_blocking=True)
+
+            batch['euler_angles'] = ea
+
+        # tool_params: 期望 [B, 4]
+        if 'tool_params' in batch:
+            batch['tool_params'] = _to_cuda(batch['tool_params'], dtype=torch.float32)
 
         return batch
 
     def _to_cuda_float_tensor(self, x):
-        """转换为CUDA float tensor"""
-        if isinstance(x, torch.Tensor):
-            return x.to(dtype=torch.float32, device='cuda')
-
+        """转换为CUDA float32 tensor（稳健版，支持 list/ndarray/tensor）。"""
         import numpy as np
-        try:
-            x_np = np.array(x, dtype=np.float32)
-        except (TypeError, ValueError):
-            x_np = np.array([[str(v).strip() for v in row]
-                            for row in x], dtype=np.float32)
-
-        return torch.from_numpy(x_np).to(device='cuda')
+        if isinstance(x, torch.Tensor):
+            return x.to(device='cuda', dtype=torch.float32, non_blocking=True)
+        if isinstance(x, np.ndarray):
+            return torch.from_numpy(x).to(device='cuda', dtype=torch.float32, non_blocking=True)
+        if isinstance(x, list):
+            if len(x) == 0:
+                return torch.empty(0, device='cuda', dtype=torch.float32)
+            try:
+                t = torch.tensor(x, dtype=torch.float32)
+            except Exception:
+                # 逐元素兜底
+                t = torch.stack([torch.as_tensor(e, dtype=torch.float32) for e in x], dim=0)
+            return t.to(device='cuda', non_blocking=True)
+        raise TypeError(f'Unsupported type for CUDA conversion: {type(x)}')
 
     # ==================== 最优权重保存辅助 ====================
     def _is_better(self, cur):
