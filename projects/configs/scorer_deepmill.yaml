@@ -12,7 +12,7 @@ SOLVER:
   best_val: min:test/mae  # 最优模型选择指标（最小化MAE）
   
   logdir: logs/scorer_deepmill/baseline
-  max_epoch: 600
+  max_epoch: 1500
   test_every_epoch: 10
   
   milestones: (240, 360, 480)
