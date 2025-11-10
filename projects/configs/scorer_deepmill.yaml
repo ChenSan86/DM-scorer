@@ -4,7 +4,7 @@
 # --------------------------------------------------------
 
 SOLVER:
-  run: evaluate
+  run: train
   gpu: (3,)
   type: adam              # 使用Adam优化器
   lr: 0.001               # 学习率

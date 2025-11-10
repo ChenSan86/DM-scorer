@@ -101,30 +101,8 @@ class ScorerSolver(Solver):
             batch['labels'] = _to_cuda(batch['labels'], dtype=torch.float32)
 
         # euler_angles: 数据集提供 [338, 2]，但 DataLoader 可能 collate 成 [B, 338, 2] 或 list
-        if 'euler_angles' in batch:
-            ea = batch['euler_angles']
-            import numpy as np
-            if isinstance(ea, list):
-                # 列表情况：通常是 [B, 338, 2] 的 list 或 [338, 2]
-                try:
-                    ea = torch.tensor(ea, dtype=torch.float32)
-                except Exception:
-                    ea = torch.stack([torch.as_tensor(e, dtype=torch.float32) for e in ea], dim=0)
-            elif isinstance(ea, np.ndarray):
-                ea = torch.from_numpy(ea.astype(np.float32))
-
-            if isinstance(ea, torch.Tensor):
-                # 若为 [B, 338, 2]，取 batch 内第一份（公共查表）
-                if ea.dim() == 3 and ea.size(-2) == 338 and ea.size(-1) == 2:
-                    ea = ea[0]
-                # 若为展平的一维，尝试 reshape
-                if ea.dim() == 1 and ea.numel() == 338 * 2:
-                    ea = ea.view(338, 2)
-                ea = ea.to(device='cuda', dtype=torch.float32, non_blocking=True)
-
-            batch['euler_angles'] = ea
-
-        # tool_params: 期望 [B, 4]
+        if 'angles' in batch:
+            batch['angles'] = _to_cuda(batch['angles'], dtype=torch.float32)
         if 'tool_params' in batch:
             batch['tool_params'] = _to_cuda(batch['tool_params'], dtype=torch.float32)
 
@@ -166,39 +144,7 @@ class ScorerSolver(Solver):
         torch.save(self._get_model_state(), self._best_ckpt_path)
         tqdm.write(f"=> Saved best model to {self._best_ckpt_path} | epoch {epoch} | {self._best_key}={self._best_value:.6f}")
 
-    # ==================== Training Strategy ====================
-    def sample_rotation_indices(self, B, strategy='uniform'):
-        """
-        为每个样本采样一个旋转矩阵索引
-
-        Args:
-            B: batch size
-            strategy: 采样策略
-                - 'uniform': 均匀随机采样
-                - 'hard': 困难样本挖掘（高分数区域）
-                - 'mixed': 混合采样
-
-        Returns:
-            indices: [B] 旋转矩阵索引
-        """
-        if strategy == 'uniform':
-            # 均匀随机采样
-            indices = torch.randint(0, 338, (B,), device='cuda')
-        elif strategy == 'hard':
-            # 困难样本挖掘：从分数较高的前50%中采样
-            # TODO: 需要根据当前模型预测实现
-            indices = torch.randint(0, 338, (B,), device='cuda')
-        else:  # mixed
-            # 80%均匀，20%从前半部分采样
-            num_uniform = int(0.8 * B)
-            uniform_indices = torch.randint(
-                0, 338, (num_uniform,), device='cuda')
-            hard_indices = torch.randint(
-                0, 169, (B - num_uniform,), device='cuda')
-            indices = torch.cat([uniform_indices, hard_indices])
-            indices = indices[torch.randperm(B, device='cuda')]
-
-        return indices
+   
 
     def model_forward(self, batch, rot_indices=None):
         """
@@ -219,29 +165,22 @@ class ScorerSolver(Solver):
 
         B = batch['labels'].size(0)
 
-        # 采样欧拉角索引
-        if rot_indices is None:
-            rot_indices = self.sample_rotation_indices(B, strategy='uniform')
-
-        # 获取对应的欧拉角对
-        euler_angles_all = batch['euler_angles']  # [338, 2]
-        selected_eulers = euler_angles_all[rot_indices]  # [B, 2]
+        angles =  batch['angles'] 
 
         # 获取刀具参数
-        tool_params = self._to_cuda_float_tensor(
-            batch['tool_params'])  # [B, 4]
+        tool_params = batch['tool_params']
 
         # 前向传播
         score_pred = self.model.forward(
             data, octree, octree.depth, query_pts,
-            selected_eulers, tool_params
+            angles, tool_params
         )  # [B]
 
         # 获取对应的GT分数
-        labels = batch['labels']  # [B, 338]
-        score_gt = labels[torch.arange(B, device='cuda'), rot_indices]  # [B]
+       
+        score_gt = batch['labels']# [B]
 
-        return score_pred, score_gt, rot_indices
+        return score_pred, score_gt
 
     # ==================== Loss & Metrics ====================
     def loss_function(self, score_pred, score_gt):
@@ -270,9 +209,14 @@ class ScorerSolver(Solver):
 
     # ==================== Train / Test Steps ====================
     def train_step(self, batch):
+        print("="*100)
+        print("train step")
+        print("batch:",batch)
+        print("+"*100)
+        print("\n"*5)
         """训练步骤"""
         batch = self.process_batch(batch, self.FLAGS.DATA.train)
-        score_pred, score_gt, _ = self.model_forward(batch)
+        score_pred, score_gt= self.model_forward(batch)
 
         # 计算损失
         loss = self.loss_function(score_pred, score_gt)
@@ -294,7 +238,7 @@ class ScorerSolver(Solver):
         """测试步骤"""
         batch = self.process_batch(batch, self.FLAGS.DATA.test)
         with torch.no_grad():
-            score_pred, score_gt, _ = self.model_forward(batch)
+            score_pred, score_gt= self.model_forward(batch)
 
             loss = self.loss_function(score_pred, score_gt)
             mae = self.mae(score_pred, score_gt)
@@ -325,7 +269,7 @@ class ScorerSolver(Solver):
             for rot_idx in range(338):
                 rot_indices = torch.full(
                     (B,), rot_idx, device='cuda', dtype=torch.long)
-                score_pred, _, _ = self.model_forward(batch, rot_indices)
+                score_pred, _ = self.model_forward(batch, rot_indices)
                 all_scores.append(score_pred.cpu().numpy())
 
             all_scores = np.stack(all_scores, axis=1)  # [B, 338]

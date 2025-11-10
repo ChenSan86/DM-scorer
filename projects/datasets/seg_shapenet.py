@@ -32,10 +32,6 @@ class ShapeNetTransform(Transform):
 
 
 
-        labels = torch.from_numpy(sample['labels']).float()  # 主标签
-
-
-
 
 
         # labels_2 = torch.from_numpy(sample['labels_2']).float()  # 辅助标签
