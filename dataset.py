@@ -95,3 +95,13 @@ class Dataset(torch.utils.data.Dataset):
         result = (filenames[:self.take],
                   labels[:self.take], tool_params[:self.take],angles[:self.take],id_names[:self.take],scores[:self.take])
         return result  # 返回指定数量的文件名、标签和刀具参数
+
+if __name__ == '__main__':
+    dataset = Dataset(root='.', filelist='data_filelist/test.txt', transform=None, in_memory=False, take=4)
+    print(len(dataset))
+    print(dataset.__getitem__(0))
+    
+'''/home/group1/xinguanze/project/deepmill_scorer/DM-scorer/dataset.py:57: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
+  output['tool_params'] = torch.tensor(tool_vals, dtype=torch.float32)  # [4]
+{'label': 0, 'filename': 'models/0000_collision_detection.ply', 'tool_params': tensor([ 1.7185, 16.1724, 32.9369, 17.6935]), 'angles': tensor([ 60.0000, -79.2000]), 'id_names': '0000_60_b79.2', 'labels': tensor(0.2835)}'''
+    
