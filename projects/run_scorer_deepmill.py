@@ -14,7 +14,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--alias', type=str, default='scorer_baseline', help='log alias')
 parser.add_argument('--gpu', type=str, default='3', help='CUDA visible devices')
 parser.add_argument('--depth', type=int, default=5, help='octree depth')
-parser.add_argument('--ckpt', type=str, default='', help='checkpoint path')
+parser.add_argument('--ckpt', type=str, default='/home/group1/xinguanze/project/deepmill_scorer/DM-scorer/projects/logs/scorer_deepmill/score_baseline_1500_epoch_ora_angle/models_models/ratio_1.00/best_test_mae.pth', help='checkpoint path')
 parser.add_argument('--ratios', type=float, default=[1.0], nargs='*', help='train ratios')
 
 args = parser.parse_args()
@@ -52,7 +52,7 @@ def build_cmd_list(
         'DATA.train.filelist', f'{data_root}/filelist/{cat}_train_val.txt',
         'DATA.train.take', str(take),
         'DATA.test.depth', str(depth),
-        'DATA.test.filelist', f'{data_root}/filelist/{cat}_test.txt',
+        'DATA.test.filelist', f'{data_root}/filelist/test.txt',
     ]
     
     return cmd
