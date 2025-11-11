@@ -209,6 +209,10 @@ class ScorerSolver(Solver):
 
     # ==================== Train / Test Steps ====================
     def train_step(self, batch):
+        print("train step")
+        print("="*100)
+        print(batch)
+        print("="*100)
 
         """训练步骤"""
         batch = self.process_batch(batch, self.FLAGS.DATA.train)

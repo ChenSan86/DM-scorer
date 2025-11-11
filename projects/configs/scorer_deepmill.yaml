@@ -4,7 +4,7 @@
 # --------------------------------------------------------
 
 SOLVER:
-  run: train
+  run: evaluate         # 运行模式：train / evaluate / visualize
   gpu: (2,)
   type: adam              # 使用Adam优化器
   lr: 0.001               # 学习率
@@ -45,7 +45,7 @@ DATA:
     # loading
     location: data_2.0/points
     filelist: data_2.0/filelist/models_train_val.txt
-    batch_size: 256
+    batch_size: 8
     shuffle: True
     num_workers: 0
     pin_memory: True

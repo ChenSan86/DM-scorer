@@ -47,12 +47,12 @@ def build_cmd_list(
         'SOLVER.max_epoch', str(max_epoch),
         'SOLVER.milestones', f'({min(milestone1, milestone2)},{max(milestone1, milestone2)})',
         'SOLVER.test_every_epoch', str(test_every_epoch),
-        'SOLVER.ckpt', (args.ckpt if args.ckpt != '' else "''"),
+        'SOLVER.ckpt', (args.ckpt),
         'DATA.train.depth', str(depth),
-        'DATA.train.filelist', f'{data_root}/filelist/{cat}_train_val_1.txt',
+        'DATA.train.filelist', f'{data_root}/filelist/{cat}_train_val.txt',
         'DATA.train.take', str(take),
         'DATA.test.depth', str(depth),
-        'DATA.test.filelist', f'{data_root}/filelist/{cat}_test_1.txt',
+        'DATA.test.filelist', f'{data_root}/filelist/test.txt',
     ]
     
     return cmd
@@ -68,7 +68,7 @@ def main():
             
             # 里程碑：40%, 70%
             milestone1 = int(0.40 * max_epoch)
-            milestone2 = int(0.70 * max_epoch)
+            milestone2 = int(0.60 * max_epoch)
             
             take = int(math.ceil(train_num[k] * ratio))
             logdir = os.path.join(log_root, f'{alias}/{cat}_{names[k]}/ratio_{ratio:.2f}')

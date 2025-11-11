@@ -53,7 +53,7 @@ class Dataset(torch.utils.data.Dataset):
         angles = torch.tensor(self.angles[idx], dtype=torch.float32)  # 列表/字符串
         id_names = self.id_names[idx]
         scores = torch.tensor(self.scores[idx], dtype=torch.float32)
-        output['tool_params'] = torch.tensor(tool_vals, dtype=torch.float32)  # [4]
+        output['tool_params'] = tool_vals
         output['angles'] = angles  # [2]
         output['id_names'] = id_names
         output['labels'] = scores
