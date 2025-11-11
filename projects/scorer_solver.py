@@ -146,7 +146,7 @@ class ScorerSolver(Solver):
 
    
 
-    def model_forward(self, batch, rot_indices=None):
+    def model_forward(self, batch):
         """
         模型前向传播
 
@@ -209,11 +209,7 @@ class ScorerSolver(Solver):
 
     # ==================== Train / Test Steps ====================
     def train_step(self, batch):
-        print("="*100)
-        print("train step")
-        print("batch:",batch)
-        print("+"*100)
-        print("\n"*5)
+
         """训练步骤"""
         batch = self.process_batch(batch, self.FLAGS.DATA.train)
         score_pred, score_gt= self.model_forward(batch)
@@ -266,27 +262,25 @@ class ScorerSolver(Solver):
             all_scores = []
 
             # 遍历所有338个姿态
-            for rot_idx in range(338):
-                rot_indices = torch.full(
-                    (B,), rot_idx, device='cuda', dtype=torch.long)
-                score_pred, _ = self.model_forward(batch, rot_indices)
-                all_scores.append(score_pred.cpu().numpy())
+            score_pred, scores_gt = self.model_forward(batch)
 
-            all_scores = np.stack(all_scores, axis=1)  # [B, 338]
-            labels_gt = batch['labels'].cpu().numpy()  # [B, 338]
+            
 
             # 保存结果
-            filenames = batch['filename']
+            filenames = batch['id_names']
             for i, fname in enumerate(filenames):
                 self.eval_rst[fname] = {
-                    'scores_pred': all_scores[i],  # [338]
-                    'scores_gt': labels_gt[i],     # [338]
+                    'scores_pred': score_pred.cpu().numpy()[i],  
+                    'scores_gt': scores_gt.cpu().numpy()[i],     
+                    'tool_params': batch['tool_params'].cpu().numpy()[i],
+                    'angles': batch['angles'].cpu().numpy()[i],
+                    'id_name': fname
                 }
 
                 # 最后一个epoch保存
                 if self.FLAGS.SOLVER.eval_epoch - 1 == batch['epoch']:
                     full_filename = os.path.join(
-                        self.logdir, fname[:-4] + '.scorer_eval.npz'
+                        self.eval_output_dir, fname + '.scorer_eval.npz'
                     )
                     curr_folder = os.path.dirname(full_filename)
                     if not os.path.exists(curr_folder):
@@ -295,6 +289,9 @@ class ScorerSolver(Solver):
                         full_filename,
                         scores_pred=self.eval_rst[fname]['scores_pred'],
                         scores_gt=self.eval_rst[fname]['scores_gt'],
+                        tool_params=self.eval_rst[fname]['tool_params'],
+                        angles=self.eval_rst[fname]['angles'],
+                        id_name=self.eval_rst[fname]['id_name']
                     )
 
     def result_callback(self, avg_tracker, epoch):

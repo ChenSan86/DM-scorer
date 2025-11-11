@@ -135,6 +135,7 @@ class Solver:
     def configure_log(self, set_writer=True):
         '''配置日志和TensorBoard写入器'''
         self.logdir = self.FLAGS.SOLVER.logdir
+        self.eval_output_dir = self.FLAGS.SOLVER.eval_output_dir
         self.ckpt_dir = os.path.join(self.logdir, 'checkpoints')
         self.log_file = os.path.join(self.logdir, 'log.csv')
         if self.is_master:
