@@ -1,7 +1,7 @@
 # 忽略训练日志和数据目录
 projects/logs/
 projects/data_2.0/
-
+projects/configs/
 
 
 # Python缓存和编译文件

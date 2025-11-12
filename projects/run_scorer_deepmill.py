@@ -32,8 +32,8 @@ log_root = 'logs/scorer_deepmill'
 
 categories = ['models']
 names = ['models']
-train_num = [8928]
-test_num = [2232]
+train_num = [4451]
+test_num = [1112]
 max_epoches = [1500]
 
 
