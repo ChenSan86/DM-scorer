@@ -1,1 +1,0 @@
-models/{id}_collision_detection.ply 0 {float1} {float2} {float3} {float4} {angle1} {angle2} {score} {id_angle1_angle2}

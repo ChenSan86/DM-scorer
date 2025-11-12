@@ -1,40 +1,35 @@
-# --------------------------------------------------------
-# Octree-based Sparse Convolutional Neural Networks
-# Copyright (c) 2022 Peng-Shuai Wang
-# Licensed under The MIT License [see LICENSE for details]
-# --------------------------------------------------------
 import os
-import torch
+import glob
 import numpy as np
-import json
-from tqdm import tqdm
+# 解析/home/group1/xinguanze/project/deepmill_scorer/DM-scorer/projects/logs/scorer_deepmill/output/3370_60_b79.2.scorer_eval.npz
+# 怎么打开这个文件并读取里面的内容
+all_scores_pred = []
+all_scores_gt = []
+src_dir = "/home/group1/xinguanze/project/deepmill_scorer/DM-scorer/projects/logs/scorer_deepmill/output/"
 
+def load_npz_data(npz_path):
+    with np.load(npz_path, allow_pickle=False) as data:
 
-def _angles_to_rotation_matrix(pitch, roll):
-    # 转换为张量
-    pitch_rad = torch.tensor(pitch * (torch.pi / 180.0))
-    roll_rad = torch.tensor(roll * (torch.pi / 180.0))
+        scores_pred = data["scores_pred"]   # numpy.ndarray
+        scores_gt = data["scores_gt"]
+        tool_params = data["tool_params"]
+        angles = data["angles"]
+        id_name = data["id_name"]
 
-    # Rx(pitch) - 绕 x 轴旋转
-    cr, sr = torch.cos(pitch_rad), torch.sin(pitch_rad)
-    cp, sp = torch.cos(roll_rad), torch.sin(roll_rad)
-    Rx = torch.tensor([
-        [1,   0,    0],
-        [0,  cp,  -sp],
-        [0,  sp,   cp]
-    ], dtype=torch.float32)
+        all_scores_pred.append(scores_pred)
+        all_scores_gt.append(scores_gt)
 
-    # Ry(roll) - 绕 y 轴旋转
+        print(f"id_name: {id_name}")
+        print("scores_pred", scores_pred)
+        print("scores_gt", scores_gt)
+        print("tool_params:", tool_params)
+        print("angles", angles)
+        print("-----")
 
-    Ry = torch.tensor([
-        [cr,  0,  sr],
-        [0,  1,   0],
-        [-sr,  0,  cr]
-    ], dtype=torch.float32)
-
-    R = torch.mm(Ry, Rx)
-
-    return R
-
-
-print(_angles_to_rotation_matrix(-90, -180))
+# 如果要批量读取一个目录下所有 .scorer_eval.npz：
+# for p in glob.glob("/home/group1/xinguanze/project/deepmill_scorer/DM-scorer/projects/logs/scorer_deepmill/output/*.scorer_eval.npz"):
+#     with np.load(p, allow_pickle=False) as d:
+#         all_scores_pred.append(d["scores_pred"])
+#         all_scores_gt.append(d["scores_gt"])
+for p in glob.glob("/home/group1/xinguanze/project/deepmill_scorer/DM-scorer/projects/logs/scorer_deepmill/output/*.scorer_eval.npz"):
+   load_npz_data(p)

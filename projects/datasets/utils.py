@@ -48,10 +48,10 @@ class ReadPly:
         model_name = basename.replace('_collision_detection.ply', '')
         # print(basename)
         # print(model_name)
-        label = read_six_dim_vector(model_name)
+
         # print(label)
 
-        output['labels'] = np.array(label).astype(np.float32)
+        #output['labels'] = np.array(label).astype(np.float32)
 
 
     #   # 如果需要标签，则读取标签信息

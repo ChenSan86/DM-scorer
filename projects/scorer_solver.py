@@ -73,33 +73,58 @@ class ScorerSolver(Solver):
 
     # ==================== Batch Processing ====================
     def process_batch(self, batch, flags):
-        """处理batch，移到GPU"""
+        """处理batch，移到GPU。稳健处理 list/ndarray/tensor 情况。"""
+        # Octree 与 Points
         if 'octree' in batch:
             batch['octree'] = batch['octree'].cuda(non_blocking=True)
+        if 'points' in batch:
             batch['points'] = batch['points'].cuda(non_blocking=True)
 
-        # 转换其他字段
+        # 统一转换到 CUDA 的小工具
+        def _to_cuda(x, dtype=torch.float32):
+            import numpy as np
+            if isinstance(x, torch.Tensor):
+                return x.to(device='cuda', dtype=dtype, non_blocking=True)
+            if isinstance(x, np.ndarray):
+                return torch.from_numpy(x).to(device='cuda', dtype=dtype, non_blocking=True)
+            if isinstance(x, list):
+                try:
+                    tx = torch.tensor(x, dtype=dtype)
+                except Exception:
+                    # 退而求其次：逐元素转 tensor 再 stack
+                    tx = torch.stack([torch.as_tensor(e) for e in x], dim=0).to(dtype=dtype)
+                return tx.to(device='cuda', non_blocking=True)
+            return x
+
+        # labels: 期望 [B, 338]，用于数值回归
         if 'labels' in batch:
-            batch['labels'] = batch['labels'].cuda(non_blocking=True)
-        if 'rotation_matrices' in batch:
-            batch['rotation_matrices'] = batch['rotation_matrices'].cuda(
-                non_blocking=True)
+            batch['labels'] = _to_cuda(batch['labels'], dtype=torch.float32)
+
+        # euler_angles: 数据集提供 [338, 2]，但 DataLoader 可能 collate 成 [B, 338, 2] 或 list
+        if 'angles' in batch:
+            batch['angles'] = _to_cuda(batch['angles'], dtype=torch.float32)
+        if 'tool_params' in batch:
+            batch['tool_params'] = _to_cuda(batch['tool_params'], dtype=torch.float32)
 
         return batch
 
     def _to_cuda_float_tensor(self, x):
-        """转换为CUDA float tensor"""
-        if isinstance(x, torch.Tensor):
-            return x.to(dtype=torch.float32, device='cuda')
-
+        """转换为CUDA float32 tensor（稳健版，支持 list/ndarray/tensor）。"""
         import numpy as np
-        try:
-            x_np = np.array(x, dtype=np.float32)
-        except (TypeError, ValueError):
-            x_np = np.array([[str(v).strip() for v in row]
-                            for row in x], dtype=np.float32)
-
-        return torch.from_numpy(x_np).to(device='cuda')
+        if isinstance(x, torch.Tensor):
+            return x.to(device='cuda', dtype=torch.float32, non_blocking=True)
+        if isinstance(x, np.ndarray):
+            return torch.from_numpy(x).to(device='cuda', dtype=torch.float32, non_blocking=True)
+        if isinstance(x, list):
+            if len(x) == 0:
+                return torch.empty(0, device='cuda', dtype=torch.float32)
+            try:
+                t = torch.tensor(x, dtype=torch.float32)
+            except Exception:
+                # 逐元素兜底
+                t = torch.stack([torch.as_tensor(e, dtype=torch.float32) for e in x], dim=0)
+            return t.to(device='cuda', non_blocking=True)
+        raise TypeError(f'Unsupported type for CUDA conversion: {type(x)}')
 
     # ==================== 最优权重保存辅助 ====================
     def _is_better(self, cur):
@@ -119,41 +144,9 @@ class ScorerSolver(Solver):
         torch.save(self._get_model_state(), self._best_ckpt_path)
         tqdm.write(f"=> Saved best model to {self._best_ckpt_path} | epoch {epoch} | {self._best_key}={self._best_value:.6f}")
 
-    # ==================== Training Strategy ====================
-    def sample_rotation_indices(self, B, strategy='uniform'):
-        """
-        为每个样本采样一个旋转矩阵索引
+   
 
-        Args:
-            B: batch size
-            strategy: 采样策略
-                - 'uniform': 均匀随机采样
-                - 'hard': 困难样本挖掘（高分数区域）
-                - 'mixed': 混合采样
-
-        Returns:
-            indices: [B] 旋转矩阵索引
-        """
-        if strategy == 'uniform':
-            # 均匀随机采样
-            indices = torch.randint(0, 338, (B,), device='cuda')
-        elif strategy == 'hard':
-            # 困难样本挖掘：从分数较高的前50%中采样
-            # TODO: 需要根据当前模型预测实现
-            indices = torch.randint(0, 338, (B,), device='cuda')
-        else:  # mixed
-            # 80%均匀，20%从前半部分采样
-            num_uniform = int(0.8 * B)
-            uniform_indices = torch.randint(
-                0, 338, (num_uniform,), device='cuda')
-            hard_indices = torch.randint(
-                0, 169, (B - num_uniform,), device='cuda')
-            indices = torch.cat([uniform_indices, hard_indices])
-            indices = indices[torch.randperm(B, device='cuda')]
-
-        return indices
-
-    def model_forward(self, batch, rot_indices=None):
+    def model_forward(self, batch):
         """
         模型前向传播
 
@@ -172,29 +165,22 @@ class ScorerSolver(Solver):
 
         B = batch['labels'].size(0)
 
-        # 采样旋转矩阵索引
-        if rot_indices is None:
-            rot_indices = self.sample_rotation_indices(B, strategy='uniform')
-
-        # 获取对应的旋转矩阵
-        rotation_matrices = batch['rotation_matrices']  # [338, 3, 3]
-        selected_rotations = rotation_matrices[rot_indices]  # [B, 3, 3]
+        angles =  batch['angles'] 
 
         # 获取刀具参数
-        tool_params = self._to_cuda_float_tensor(
-            batch['tool_params'])  # [B, 4]
+        tool_params = batch['tool_params']
 
         # 前向传播
         score_pred = self.model.forward(
             data, octree, octree.depth, query_pts,
-            selected_rotations, tool_params
+            angles, tool_params
         )  # [B]
 
         # 获取对应的GT分数
-        labels = batch['labels']  # [B, 338]
-        score_gt = labels[torch.arange(B, device='cuda'), rot_indices]  # [B]
+       
+        score_gt = batch['labels']# [B]
 
-        return score_pred, score_gt, rot_indices
+        return score_pred, score_gt
 
     # ==================== Loss & Metrics ====================
     def loss_function(self, score_pred, score_gt):
@@ -223,9 +209,14 @@ class ScorerSolver(Solver):
 
     # ==================== Train / Test Steps ====================
     def train_step(self, batch):
+        print("train step")
+        print("="*100)
+        print(batch)
+        print("="*100)
+
         """训练步骤"""
         batch = self.process_batch(batch, self.FLAGS.DATA.train)
-        score_pred, score_gt, _ = self.model_forward(batch)
+        score_pred, score_gt= self.model_forward(batch)
 
         # 计算损失
         loss = self.loss_function(score_pred, score_gt)
@@ -247,7 +238,7 @@ class ScorerSolver(Solver):
         """测试步骤"""
         batch = self.process_batch(batch, self.FLAGS.DATA.test)
         with torch.no_grad():
-            score_pred, score_gt, _ = self.model_forward(batch)
+            score_pred, score_gt= self.model_forward(batch)
 
             loss = self.loss_function(score_pred, score_gt)
             mae = self.mae(score_pred, score_gt)
@@ -275,27 +266,25 @@ class ScorerSolver(Solver):
             all_scores = []
 
             # 遍历所有338个姿态
-            for rot_idx in range(338):
-                rot_indices = torch.full(
-                    (B,), rot_idx, device='cuda', dtype=torch.long)
-                score_pred, _, _ = self.model_forward(batch, rot_indices)
-                all_scores.append(score_pred.cpu().numpy())
+            score_pred, scores_gt = self.model_forward(batch)
 
-            all_scores = np.stack(all_scores, axis=1)  # [B, 338]
-            labels_gt = batch['labels'].cpu().numpy()  # [B, 338]
+            
 
             # 保存结果
-            filenames = batch['filename']
+            filenames = batch['id_names']
             for i, fname in enumerate(filenames):
                 self.eval_rst[fname] = {
-                    'scores_pred': all_scores[i],  # [338]
-                    'scores_gt': labels_gt[i],     # [338]
+                    'scores_pred': score_pred.cpu().numpy()[i],  
+                    'scores_gt': scores_gt.cpu().numpy()[i],     
+                    'tool_params': batch['tool_params'].cpu().numpy()[i],
+                    'angles': batch['angles'].cpu().numpy()[i],
+                    'id_name': fname
                 }
 
                 # 最后一个epoch保存
                 if self.FLAGS.SOLVER.eval_epoch - 1 == batch['epoch']:
                     full_filename = os.path.join(
-                        self.logdir, fname[:-4] + '.scorer_eval.npz'
+                        self.eval_output_dir, fname + '.scorer_eval.npz'
                     )
                     curr_folder = os.path.dirname(full_filename)
                     if not os.path.exists(curr_folder):
@@ -304,6 +293,9 @@ class ScorerSolver(Solver):
                         full_filename,
                         scores_pred=self.eval_rst[fname]['scores_pred'],
                         scores_gt=self.eval_rst[fname]['scores_gt'],
+                        tool_params=self.eval_rst[fname]['tool_params'],
+                        angles=self.eval_rst[fname]['angles'],
+                        id_name=self.eval_rst[fname]['id_name']
                     )
 
     def result_callback(self, avg_tracker, epoch):
