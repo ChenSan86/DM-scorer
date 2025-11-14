@@ -1,5 +1,5 @@
 # --------------------------------------------------------
-# Scorer Network for Quality Evaluation
+# Scorer Network for Reachability Evaluation (No Tool Params)
 # Copyright (c) 2025
 # --------------------------------------------------------
 
@@ -12,18 +12,24 @@ from ocnn.octree import Octree
 
 class ScorerNet(nn.Module):
     """
-    评估器网络：给定点云、姿态、刀具参数，预测加工质量分数
+    可达性评估网络：给定点云和姿态，预测当前姿态下的不可达点比例（0-1）
+
+    任务:
+        - 评估模型点云在该姿态下的可达性
+        - 标签：不可达点数量 / 点云总数量 ∈ [0, 1]
+          → 数值越大，不可达点越多，可达性越差
+          → 数值越小，不可达点越少，可达性越好
 
     输入:
         - data: [N_nodes, C_in] 八叉树节点特征
-        - octree: Octree对象
+        - octree: Octree 对象
         - depth: int
-        - query_pts: [N_pts, 4] 查询点
+        - query_pts: [N_pts, 4] 查询点 (x, y, z, batch_id)
         - euler_angles: [B, 2] 欧拉角对（pitch, roll）
-        - tool_params: [B, 4] 刀具参数
+        - tool_params: [B, 4] 刀具参数（仅为兼容保留，当前版本不使用）
 
     输出:
-        - score: [B] 评分（越小越好）
+        - unreachable_ratio: [B] 不可达点比例（不可达点数量 / 点云数量），范围 [0, 1]
     """
 
     def __init__(
@@ -31,7 +37,6 @@ class ScorerNet(nn.Module):
         in_channels: int = 4,
         geo_channels: int = 256,      # 几何特征维度
         rot_channels: int = 128,      # 旋转特征维度
-        tool_channels: int = 64,      # 刀具特征维度
         interp: str = 'linear',
         nempty: bool = False,
         use_decoder: bool = False,    # 是否使用解码器（保留接口）
@@ -41,7 +46,6 @@ class ScorerNet(nn.Module):
         self.in_channels = in_channels
         self.geo_channels = geo_channels
         self.rot_channels = rot_channels
-        self.tool_channels = tool_channels
         self.nempty = nempty
         self.use_decoder = use_decoder
 
@@ -61,7 +65,7 @@ class ScorerNet(nn.Module):
             ) for i in range(self.encoder_stages)
         ])
 
-        # 编码器ResBlock
+        # 编码器 ResBlock
         self.encoder = nn.ModuleList([
             ocnn.modules.OctreeResBlocks(
                 self.encoder_channel[i + 1], self.encoder_channel[i + 1],
@@ -83,7 +87,6 @@ class ScorerNet(nn.Module):
         )
 
         # ============ 2. 欧拉角特征提取 ============
-        # ============ 2. 欧拉角特征提取 ============
         self.euler_encoder = nn.Sequential(
             nn.Linear(2, 16),
             nn.ReLU(inplace=True),
@@ -95,18 +98,8 @@ class ScorerNet(nn.Module):
             nn.ReLU(inplace=True),
         )
 
-        # ============ 3. 刀具参数特征提取 ============
-        self.tool_encoder = nn.Sequential(
-            nn.Linear(4, 32),
-            nn.ReLU(inplace=True),
-            nn.BatchNorm1d(32),
-            nn.Dropout(0.2),
-            nn.Linear(32, tool_channels),
-            nn.ReLU(inplace=True),
-        )
-
-        # ============ 4. 特征融合 ============
-        fusion_dim = geo_channels + rot_channels + tool_channels
+        # ============ 3. 特征融合（几何 + 姿态） ============
+        fusion_dim = geo_channels + rot_channels
         self.fusion_mlp = nn.Sequential(
             nn.Linear(fusion_dim, 512),
             nn.ReLU(inplace=True),
@@ -120,24 +113,23 @@ class ScorerNet(nn.Module):
             nn.ReLU(inplace=True),
         )
 
-        # ============ 5. 评分头 ============
+        # ============ 4. 不可达比例预测头 ============
         self.score_head = nn.Sequential(
             nn.Linear(128, 64),
             nn.ReLU(inplace=True),
             nn.Linear(64, 1),
-            nn.Sigmoid()  # 输出限制到 [0, 1]
+            nn.Sigmoid()  # 输出限制到 [0, 1]，对应不可达点比例
         )
 
-        print(f"ScorerNet initialized:")
+        print(f"ScorerNet initialized (ignore tool params):")
         print(f"  - Geometry channels: {geo_channels}")
         print(f"  - Rotation channels: {rot_channels}")
-        print(f"  - Tool channels: {tool_channels}")
         print(f"  - Fusion dim: {fusion_dim}")
 
     def _config_geometry_encoder(self):
-        """配置几何编码器（参考UNet）"""
-        self.encoder_blocks = [2, 3, 4, 6]  # 4个stage
-        self.encoder_channel = [32, 32, 64, 128, 256]  # 5个channel（包括输入）
+        """配置几何编码器（参考 UNet）"""
+        self.encoder_blocks = [2, 3, 4, 6]              # 4 个 stage
+        self.encoder_channel = [32, 32, 64, 128, 256]   # 5 个 channel（包括第一层输出）
         self.encoder_stages = len(self.encoder_blocks)  # 4
         self.bottleneck = 1
         self.resblk = ocnn.modules.OctreeResBlock2
@@ -161,7 +153,7 @@ class ScorerNet(nn.Module):
             deepest_feat, octree, deepest_depth, query_pts
         )  # [N_pts, C]
 
-        # 全局平均池化
+        # 全局平均池化（按 batch）
         batch_id = query_pts[:, 3].long()
         B = batch_id.max().item() + 1
 
@@ -177,44 +169,44 @@ class ScorerNet(nn.Module):
         """批量平均池化"""
         C = point_feat.size(1)
         sum_feat = torch.zeros(
-            B, C, device=point_feat.device, dtype=point_feat.dtype)
+            B, C, device=point_feat.device, dtype=point_feat.dtype
+        )
         sum_feat.index_add_(0, batch_id, point_feat)
         cnt = torch.bincount(batch_id, minlength=B).clamp_min(1).float()
         return sum_feat / cnt.unsqueeze(1).to(point_feat.device)
 
     def forward(
         self,
-        data: torch.Tensor,          # [N_nodes, C_in]
+        data: torch.Tensor,           # [N_nodes, C_in]
         octree: Octree,
         depth: int,
-        query_pts: torch.Tensor,     # [N_pts, 4]
-        euler_angles: torch.Tensor,  # [B, 2] 欧拉角对（pitch, roll）
-        tool_params: torch.Tensor    # [B, 4]
+        query_pts: torch.Tensor,      # [N_pts, 4]
+        euler_angles: torch.Tensor,   # [B, 2] 欧拉角对（pitch, roll）
+        tool_params: Optional[torch.Tensor] = None,  # 为兼容保留，不使用
     ):
         """
         前向传播
 
         Returns:
-            score: [B] 评分
+            unreachable_ratio: [B] 不可达点比例（不可达点数 / 点云数量），范围 [0, 1]
         """
         B = euler_angles.size(0)
 
         # 1. 提取几何特征
         geo_feat = self.encode_geometry(
-            data, octree, depth, query_pts)  # [B, geo_channels]
+            data, octree, depth, query_pts
+        )  # [B, geo_channels]
 
         # 2. 提取欧拉角特征
         rot_feat = self.euler_encoder(euler_angles)  # [B, rot_channels]
 
-        # 3. 提取刀具特征
-        tool_feat = self.tool_encoder(tool_params)  # [B, tool_channels]
-
-        # 4. 特征融合
+        # 3. 特征融合（几何 + 姿态，不再使用刀具参数）
         fused_feat = torch.cat(
-            [geo_feat, rot_feat, tool_feat], dim=1)  # [B, fusion_dim]
+            [geo_feat, rot_feat], dim=1
+        )  # [B, fusion_dim]
         fused_feat = self.fusion_mlp(fused_feat)  # [B, 128]
 
-        # 5. 预测分数
-        score = self.score_head(fused_feat).squeeze(-1)  # [B]
+        # 4. 预测不可达比例
+        unreachable_ratio = self.score_head(fused_feat).squeeze(-1)  # [B]
 
-        return score
+        return unreachable_ratio

@@ -32,8 +32,8 @@ log_root = 'logs/scorer_deepmill'
 
 categories = ['models']
 names = ['models']
-train_num = [4451]
-test_num = [1112]
+train_num = [4464]
+test_num = [1116]
 max_epoches = [1500]
 
 
@@ -49,10 +49,10 @@ def build_cmd_list(
         'SOLVER.test_every_epoch', str(test_every_epoch),
         'SOLVER.ckpt', (args.ckpt),
         'DATA.train.depth', str(depth),
-        'DATA.train.filelist', f'{data_root}/filelist/{cat}_train_val.txt',
+        'DATA.train.filelist', f'{data_root}/filelist/{cat}_train_val_origin.txt',
         'DATA.train.take', str(take),
         'DATA.test.depth', str(depth),
-        'DATA.test.filelist', f'{data_root}/filelist/test.txt',
+        'DATA.test.filelist', f'{data_root}/filelist/{cat}_test_origin.txt',
     ]
     
     return cmd
