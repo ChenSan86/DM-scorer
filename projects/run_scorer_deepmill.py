@@ -69,6 +69,8 @@ def main():
             # 里程碑：40%, 70%
             milestone1 = int(0.40 * max_epoch)
             milestone2 = int(0.60 * max_epoch)
+
+
             
             take = int(math.ceil(train_num[k] * ratio))
             logdir = os.path.join(log_root, f'{alias}/{cat}_{names[k]}/ratio_{ratio:.2f}')

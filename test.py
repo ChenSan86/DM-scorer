@@ -26,10 +26,5 @@ def load_npz_data(npz_path):
         print("angles", angles)
         print("-----")
 
-# 如果要批量读取一个目录下所有 .scorer_eval.npz：
-# for p in glob.glob("/home/group1/xinguanze/project/deepmill_scorer/DM-scorer/projects/logs/scorer_deepmill/output/*.scorer_eval.npz"):
-#     with np.load(p, allow_pickle=False) as d:
-#         all_scores_pred.append(d["scores_pred"])
-#         all_scores_gt.append(d["scores_gt"])
 for p in glob.glob("/home/group1/xinguanze/project/deepmill_scorer/DM-scorer/projects/logs/scorer_deepmill/output/*.scorer_eval.npz"):
    load_npz_data(p)
