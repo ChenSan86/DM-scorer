@@ -187,6 +187,18 @@ class ScorerSolver(Solver):
         """MSE loss"""
         loss = torch.nn.functional.mse_loss(score_pred, score_gt)
         return loss
+    def contrastive_loss(self,F_i, F_j, gt_i, gt_j):
+        """简化版对比损失"""
+        # 计算标签差异作为权重
+        w_ij = torch.abs(gt_i - gt_j)  # 权重：标签差异
+
+        # 计算特征之间的欧氏距离
+        dist = torch.norm(F_i - F_j, p=2, dim=1)
+
+        # 计算对比损失
+        loss = dist * w_ij  # 权重乘以距离
+        return loss.mean()  # 平均损失
+
 
     def loss_function_huber(self, score_pred, score_gt, delta=1.0):
         """Huber loss（对outlier更鲁棒）"""
@@ -209,23 +221,34 @@ class ScorerSolver(Solver):
 
     # ==================== Train / Test Steps ====================
     def train_step(self, batch):
-
-
         """训练步骤"""
         batch = self.process_batch(batch, self.FLAGS.DATA.train)
-        score_pred, score_gt= self.model_forward(batch)
+        score_pred, score_gt, features = self.model_forward(batch)
 
-        # 计算损失
-        loss = self.loss_function(score_pred, score_gt)
+        # 计算对比损失：遍历姿态对进行计算
+        contrastive_loss_value = 0
+        for i in range(features.size(0)):  # 遍历每个样本
+            for j in range(i+1, features.size(0)):  # 对每个样本生成所有姿态对
+                # gt_i 和 gt_j 是真实的不可达率
+                gt_i = score_gt[i]
+                gt_j = score_gt[j]
 
-        # 计算指标
+                # 计算对比损失
+                contrastive_loss_value += self.contrastive_loss(features[i], features[j], gt_i, gt_j)
+
+        # 计算回归损失（MSE）
+        mse_loss = self.loss_function(score_pred, score_gt)  # MSE loss
+
+        # 总损失 = MSE + 对比损失
+        total_loss = mse_loss + self.FLAGS.TRAIN.contrastive_loss_weight * contrastive_loss_value
+
         mae = self.mae(score_pred, score_gt)
         rmse_val = self.rmse(score_pred, score_gt)
         rel_err = self.relative_error(score_pred, score_gt)
 
-        device = loss.device
+        device = mse_loss.device
         return {
-            'train/loss': loss,
+            'train/loss': total_loss,
             'train/mae': torch.tensor(mae, dtype=torch.float32, device=device),
             'train/rmse': torch.tensor(rmse_val, dtype=torch.float32, device=device),
             'train/rel_error': torch.tensor(rel_err, dtype=torch.float32, device=device),

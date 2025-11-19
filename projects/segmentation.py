@@ -129,20 +129,36 @@ class SegSolver(Solver):
     # Forward pass
     # -----------------------------
     def model_forward(self, batch):
+        """
+        模型前向传播
+
+        Args:
+            batch: 数据批次
+
+        Returns:
+            score_pred: [B] 预测分数
+            score_gt: [B] 真实分数
+            features: [B, 338, feature_dim] 每个姿态的特征
+        """
         octree, points = batch['octree'], batch['points']
         data = self.get_input_feature(octree)
         query_pts = torch.cat([points.points, points.batch_id], dim=1)
 
-        # tool params (B, 4) -> tensor
-        tool_params = self._to_cuda_float_tensor(batch['tool_params'])
+        B = batch['labels'].size(0)
 
-        # forward -> angles (B, 2) in degrees: [pitch, roll]
-        logit = self.model.forward(
-            data, octree, octree.depth, query_pts, tool_params)
+        angles = batch['angles']  # 每个样本有 338 个姿态
+        tool_params = batch['tool_params']
 
-        # labels: 你的任务下通常是打分表 (B, K)；如需角度GT，请在数据管道中提供 (B,2/3/6)
-        labels = self._to_cuda_float_tensor(batch['labels'])
-        return logit, labels
+        # 获取前向预测分数
+        score_pred = self.model.forward(data, octree, octree.depth, query_pts, angles, tool_params)
+
+        # 获取对应的 GT 分数
+        score_gt = batch['labels']  # [B]
+
+        # 获取每个姿态的特征
+        features = self.model.get_features(data, octree, octree.depth, query_pts, angles)
+
+        return score_pred, score_gt, features
 
     @staticmethod
     def _angles_to_rotation_matrix(angles: torch.Tensor) -> torch.Tensor:
@@ -230,6 +246,18 @@ class SegSolver(Solver):
     def _safe_metric_default(self) -> float:
         """当没有 GT 角度/6D（例如只有打分表）时，给一个合理的默认指标值。"""
         return 0.0
+    def contrastive_loss(F_i, F_j, gt_i, gt_j):
+        """简化版对比损失"""
+        # 计算标签差异作为权重
+        w_ij = torch.abs(gt_i - gt_j)  # 权重：标签差异
+
+        # 计算特征之间的欧氏距离
+        dist = torch.norm(F_i - F_j, p=2, dim=1)
+
+        # 计算对比损失
+        loss = dist * w_ij  # 权重乘以距离
+        return loss.mean()  # 平均损失
+
 
     def loss_function(self, logit, label):
         """

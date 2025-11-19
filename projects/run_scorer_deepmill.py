@@ -52,7 +52,7 @@ def build_cmd_list(
         'DATA.train.filelist', f'{data_root}/filelist/{cat}_train_val_origin.txt',
         'DATA.train.take', str(take),
         'DATA.test.depth', str(depth),
-        'DATA.test.filelist', f'{data_root}/filelist/{cat}_test_origin.txt',
+        'DATA.test.filelist', f'{data_root}/filelist/test_1.txt',
     ]
     
     return cmd
