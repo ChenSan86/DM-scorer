@@ -208,47 +208,67 @@ class ScorerSolver(Solver):
         """MSE loss"""
         loss = torch.nn.functional.mse_loss(score_pred, score_gt)
         return loss
-    def contrastive_loss(self,F_i, F_j, gt_i, gt_j):
-        """简化版对比损失"""
-        # 计算标签差异作为权重
-        w_ij = torch.abs(gt_i - gt_j)  # 权重：标签差异
-
-        # 计算特征之间的欧氏距离
-        dist = torch.norm(F_i - F_j, p=2, dim=1)
-
-        # 计算对比损失
-        loss = dist * w_ij  # 权重乘以距离
-        return loss.mean()  # 平均损失
-    def compute_contrastive_loss_from_rot_feature(self, rot_feature, score_gt):
+    def contrastive_loss(self, rot_feature, score_gt, tau: float = 0.1):
         """
-        基于 rot_feature 和 score_gt 构造对比损失。
+        InfoNCE / NT-Xent 风格对比损失（同一零件内部的姿态之间）
 
-        rot_feature: [B, K, C]
-        score_gt   : [B, K]
+        rot_feature: [B, K, C]  - 每个样本、每个姿态的旋转特征
+        score_gt   : [B, K]     - 对应每个姿态的 GT（不可达比例）
 
-        设计：对同一个样本内部的 K 个姿态，两两成对，
-        标签差异越大，特征距离越大（通过 self.contrastive_loss 实现）。
+        做法（对每个 batch 内的样本独立计算）：
+          - 对同一零件内部的 K 个姿态，两两算相似度 sim(i,j)
+          - 对于每个姿态 i：
+              * 找到标签差 |gt_i - gt_j| 最小的 j（j != i），作为 positive
+              * 其他所有 k != i 的姿态作为 negative
+              * 用 InfoNCE:
+                  L_i = -log( exp(sim(i, j)/tau) / sum_{k!=i} exp(sim(i, k)/tau) )
+          - 对所有 i、所有样本求平均
         """
         B, K, C = rot_feature.shape
         device = rot_feature.device
 
-        # 生成姿态索引对 (0,1), (0,2), ..., (K-2, K-1)
-        idx_pairs = torch.combinations(torch.arange(K, device=device), r=2)  # [P, 2]
-        P = idx_pairs.size(0)
+        # 先把特征做归一化，使用 cosine similarity
+        z = torch.nn.functional.normalize(rot_feature, dim=2)  # [B, K, C]
 
-        # 取出特征对与标签对
-        # F_i, F_j: [B, P, C] -> reshape -> [B*P, C]
-        F_i = rot_feature[:, idx_pairs[:, 0], :]  # [B, P, C]
-        F_j = rot_feature[:, idx_pairs[:, 1], :]  # [B, P, C]
-        gt_i = score_gt[:, idx_pairs[:, 0]]       # [B, P]
-        gt_j = score_gt[:, idx_pairs[:, 1]]       # [B, P]
+        total_loss = 0.0
+        for b in range(B):
+            z_b = z[b]           # [K, C]
+            g_b = score_gt[b]    # [K]
 
-        F_i = F_i.reshape(B * P, C)
-        F_j = F_j.reshape(B * P, C)
-        gt_i = gt_i.reshape(B * P)
-        gt_j = gt_j.reshape(B * P)
+            # 相似度矩阵 sim(i,j) = cos / tau  -> [K, K]
+            sim = torch.matmul(z_b, z_b.t()) / tau   # [K, K]
 
-        return self.contrastive_loss(F_i, F_j, gt_i, gt_j)
+            # 计算标签差 |gt_i - gt_j|
+            diff = torch.abs(g_b.unsqueeze(1) - g_b.unsqueeze(0))  # [K, K]
+
+            # 不允许自己当 positive：把对角线加一个大值，避免被 argmin 选到
+            diff = diff + torch.eye(K, device=device) * 1e6
+
+            # 对于每个 i，找到标签最接近的 j 作为 positive
+            pos_idx = torch.argmin(diff, dim=1)  # [K]
+
+            # 构造 logits，去掉 self (i==i) 作为候选
+            logits = sim.clone()  # [K, K]
+            logits = logits - torch.eye(K, device=device) * 1e9  # 自己给个巨负，防止进 softmax
+
+            # log_softmax over dimension j
+            log_prob = logits - torch.logsumexp(logits, dim=1, keepdim=True)  # [K, K]
+
+            # 取出每个 i 对应的 positive j 的 log_prob
+            loss_b = -log_prob[torch.arange(K, device=device), pos_idx].mean()
+
+            total_loss = total_loss + loss_b
+
+        return total_loss / B
+
+    def compute_contrastive_loss_from_rot_feature(self, rot_feature, score_gt):
+        """
+        对外接口：从 rot_feature + score_gt 计算 InfoNCE 对比损失。
+        允许从配置中读取温度参数 tau（可选）。
+        """
+        tau = getattr(self.FLAGS.SOLVER, 'contrastive_tau', 0.1)
+        return self.contrastive_loss(rot_feature, score_gt, tau=tau)
+
 
 
 
