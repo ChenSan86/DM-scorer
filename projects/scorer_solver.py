@@ -96,15 +96,36 @@ class ScorerSolver(Solver):
                 return tx.to(device='cuda', non_blocking=True)
             return x
 
-        # labels: 期望 [B, 338]，用于数值回归
-        if 'labels' in batch:
-            batch['labels'] = _to_cuda(batch['labels'], dtype=torch.float32)
+        # # labels: 期望 [B, 338]，用于数值回归
+        # if 'labels' in batch:
+        #     batch['labels'] = _to_cuda(batch['labels'], dtype=torch.float32)
 
-        # euler_angles: 数据集提供 [338, 2]，但 DataLoader 可能 collate 成 [B, 338, 2] 或 list
-        if 'angles' in batch:
-            batch['angles'] = _to_cuda(batch['angles'], dtype=torch.float32)
+        # # euler_angles: 数据集提供 [338, 2]，但 DataLoader 可能 collate 成 [B, 338, 2] 或 list
+        # if 'angles' in batch:
+        #     batch['angles'] = _to_cuda(batch['angles'], dtype=torch.float32)
         if 'tool_params' in batch:
             batch['tool_params'] = _to_cuda(batch['tool_params'], dtype=torch.float32)
+            
+        #TODO在这里从angles随机取出八个索引，各取出angles和labels中对应八个值构成删减后的angles和labels
+        K = 8
+        if 'angles' in batch and 'labels' in batch:
+            # 转 CUDA
+            angles = _to_cuda(batch['angles'], dtype=torch.float32)   # [B, 338, 2]
+            labels = _to_cuda(batch['labels'], dtype=torch.float32)   # [B, 338]
+
+            B, N, D = angles.shape   # N = 338, D = 2
+
+            # 随机抽 K 个姿态索引
+            idx = torch.randperm(N, device='cuda')[:K]   # [K]
+
+            # 保留抽取后的姿态和标签
+            batch['angles'] = angles[:, idx, :]    # [B, K, 2]
+            batch['labels'] = labels[:, idx]       # [B, K]
+
+            # 保存采样的姿态索引（调试用，可要可不要）
+            batch['pose_idx'] = idx
+            
+        
 
         return batch
 
@@ -159,14 +180,16 @@ class ScorerSolver(Solver):
             score_gt: [B] 真实分数
             rot_indices: [B] 使用的旋转索引
         """
+        
+        # print("======================batch============================")
+        # print(batch)
+        # print(batch["angles"].shape())
+        # print("======================================================\n")
         octree, points = batch['octree'], batch['points']
         data = self.get_input_feature(octree)
         query_pts = torch.cat([points.points, points.batch_id], dim=1)
-
         B = batch['labels'].size(0)
-
         angles =  batch['angles'] 
-
         # 获取刀具参数
         tool_params = batch['tool_params']
 
@@ -223,24 +246,25 @@ class ScorerSolver(Solver):
     def train_step(self, batch):
         """训练步骤"""
         batch = self.process_batch(batch, self.FLAGS.DATA.train)
-        score_pred, score_gt, features = self.model_forward(batch)
+        score_pred, score_gt= self.model_forward(batch)
 
-        # 计算对比损失：遍历姿态对进行计算
-        contrastive_loss_value = 0
-        for i in range(features.size(0)):  # 遍历每个样本
-            for j in range(i+1, features.size(0)):  # 对每个样本生成所有姿态对
-                # gt_i 和 gt_j 是真实的不可达率
-                gt_i = score_gt[i]
-                gt_j = score_gt[j]
+        # # 计算对比损失：遍历姿态对进行计算
+        # contrastive_loss_value = 0
+        # for i in range(features.size(0)):  # 遍历每个样本
+        #     for j in range(i+1, features.size(0)):  # 对每个样本生成所有姿态对
+        #         # gt_i 和 gt_j 是真实的不可达率
+        #         gt_i = score_gt[i]
+        #         gt_j = score_gt[j]
 
-                # 计算对比损失
-                contrastive_loss_value += self.contrastive_loss(features[i], features[j], gt_i, gt_j)
+        #         # 计算对比损失
+        #         contrastive_loss_value += self.contrastive_loss(features[i], features[j], gt_i, gt_j)
 
         # 计算回归损失（MSE）
         mse_loss = self.loss_function(score_pred, score_gt)  # MSE loss
 
         # 总损失 = MSE + 对比损失
-        total_loss = mse_loss + self.FLAGS.TRAIN.contrastive_loss_weight * contrastive_loss_value
+        # total_loss = mse_loss + self.FLAGS.TRAIN.contrastive_loss_weight * contrastive_loss_value
+        total_loss = mse_loss
 
         mae = self.mae(score_pred, score_gt)
         rmse_val = self.rmse(score_pred, score_gt)

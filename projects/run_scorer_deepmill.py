@@ -49,10 +49,10 @@ def build_cmd_list(
         'SOLVER.test_every_epoch', str(test_every_epoch),
         'SOLVER.ckpt', (args.ckpt),
         'DATA.train.depth', str(depth),
-        'DATA.train.filelist', f'{data_root}/filelist/{cat}_train_val_origin.txt',
+        'DATA.train.filelist', f'{data_root}/filelist/{cat}_train_val_contrast.txt',
         'DATA.train.take', str(take),
         'DATA.test.depth', str(depth),
-        'DATA.test.filelist', f'{data_root}/filelist/test_1.txt',
+        'DATA.test.filelist', f'{data_root}/filelist/{cat}_test_contrast.txt',
     ]
     
     return cmd
