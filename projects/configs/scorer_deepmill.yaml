@@ -11,6 +11,8 @@ SOLVER:
   weight_decay: 0.0001    # 权重衰减
   best_val: min:test/mae  # 最优模型选择指标（最小化MAE）
   eval_output_dir: logs/scorer_deepmill/output
+  ontrastive_weight: 0.1. # 对比学习权重
+
   
   logdir: logs/scorer_deepmill/baseline
   max_epoch: 1500
@@ -46,7 +48,7 @@ DATA:
     # loading
     location: data_2.0/points
     filelist: data_2.0/filelist/models_train_val.txt
-    batch_size: 16
+    batch_size: 8
     shuffle: True
     num_workers: 0
     pin_memory: True

@@ -190,6 +190,44 @@ class ScorerNet(nn.Module):
         Returns:
             unreachable_ratio: [B] 不可达点比例（不可达点数 / 点云数量），范围 [0, 1]
         """
+            #         batch['angles'] = angles[:, idx, :]    # [B, K, 2]
+            # batch['labels'] = labels[:, idx]       # [B, K]
+        #这里发生了变化：
+        #TODO:现在要对angles中k个每个都迭代出欧拉角的特征，分数也要对应k个，
+        
+        B, K, _ = euler_angles.shape
+
+        # 1. 提取几何特征（与姿态无关，只需一次）
+        geo_feat = self.encode_geometry(data, octree, depth, query_pts)  
+        # geo_feat: [B, geo_channels]
+
+        # 为后续拼接做准备：扩展维度
+        geo_feat = geo_feat[:, None, :].expand(B, K, -1)  
+        # geo_feat: [B, K, geo_channels]
+
+        # 2. 编码 K 个角度
+        rot_feat = self.euler_encoder(euler_angles.reshape(B*K, 2))  
+        rot_feat = rot_feat.reshape(B, K, -1)  
+        # rot_feat: [B, K, rot_channels]
+
+        # 3. 融合特征
+        fused = torch.cat([geo_feat, rot_feat], dim=-1)  # [B, K, fusion_in_dim]
+        fused = self.fusion_mlp(fused.reshape(B*K, -1))
+        fused = fused.reshape(B, K, -1)  # [B, K, 128]
+
+        # 4. 输出 K 个姿态的得分
+        out = self.score_head(fused).squeeze(-1)  # [B, K]
+        return out , rot_feat  # 返回得分和旋转特征，供对比损失使用
+    
+    def inference(
+        self,
+        data: torch.Tensor,           # [N_nodes, C_in]
+        octree: Octree,
+        depth: int,
+        query_pts: torch.Tensor,      # [N_pts, 4]
+        euler_angles: torch.Tensor,   # [B, 2] 欧拉角对（pitch, roll）
+        tool_params: Optional[torch.Tensor] = None,  # 为兼容保留，不使用
+    ):
         B = euler_angles.size(0)
 
         # 1. 提取几何特征
@@ -210,3 +248,6 @@ class ScorerNet(nn.Module):
         unreachable_ratio = self.score_head(fused_feat).squeeze(-1)  # [B]
 
         return unreachable_ratio
+        return 0
+
+        
