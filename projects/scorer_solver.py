@@ -301,7 +301,7 @@ class ScorerSolver(Solver):
         reg_loss = self.loss_function(score_pred, score_gt) * 100.0
 
         # 对比损失（基于旋转特征和标签）
-        ctr_loss = self.compute_contrastive_loss_from_rot_feature(rot_feature, score_gt) * 100.0
+        ctr_loss = self.compute_contrastive_loss_from_rot_feature(rot_feature, score_gt)
 
         # 对比损失权重，可从配置里读取；没有就默认 0.1
         ctr_weight = getattr(self.FLAGS.SOLVER, 'contrastive_weight', 0.1)
@@ -354,7 +354,7 @@ class ScorerSolver(Solver):
             all_scores = []
 
             # 遍历所有338个姿态
-            score_pred, scores_gt = self.model_forward(batch)
+            score_pred, scores_gt ,_= self.model_forward(batch)
 
             
 

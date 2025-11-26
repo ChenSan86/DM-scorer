@@ -16,6 +16,8 @@ parser.add_argument('--gpu', type=str, default='3', help='CUDA visible devices')
 parser.add_argument('--depth', type=int, default=5, help='octree depth')
 parser.add_argument('--ckpt', type=str, default='', help='checkpoint path')
 parser.add_argument('--ratios', type=float, default=[1.0], nargs='*', help='train ratios')
+parser.add_argument('--test_txt', type=str, default='models_test.txt', help='test file list path')
+
 
 args = parser.parse_args()
 
@@ -32,7 +34,7 @@ log_root = 'logs/scorer_deepmill'
 
 categories = ['models']
 names = ['models']
-train_num = [4464]
+train_num = [8928]
 test_num = [1116]
 max_epoches = [1500]
 
@@ -52,7 +54,7 @@ def build_cmd_list(
         'DATA.train.filelist', f'{data_root}/filelist/{cat}_train_val_contrast.txt',
         'DATA.train.take', str(take),
         'DATA.test.depth', str(depth),
-        'DATA.test.filelist', f'{data_root}/filelist/{cat}_test_contrast.txt',
+        'DATA.test.filelist', f'{data_root}/filelist/{args.test_txt}',
     ]
     
     return cmd

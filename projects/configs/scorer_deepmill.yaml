@@ -4,14 +4,14 @@
 # --------------------------------------------------------
 
 SOLVER:
-  run: train        # 运行模式：train / evaluate / visualize
+  run: evaluate        # 运行模式：train / evaluate / visualize
   gpu: (2,)
   type: adam              # 使用Adam优化器
   lr: 0.001               # 学习率
   weight_decay: 0.0001    # 权重衰减
   best_val: min:test/mae  # 最优模型选择指标（最小化MAE）
   eval_output_dir: logs/scorer_deepmill/output
-  ontrastive_weight: 0.1. # 对比学习权重
+  contrastive_weight: 0.1  # 对比学习权重
 
   
   logdir: logs/scorer_deepmill/baseline
@@ -48,9 +48,9 @@ DATA:
     # loading
     location: data_2.0/points
     filelist: data_2.0/filelist/models_train_val.txt
-    batch_size: 8
+    batch_size: 64
     shuffle: True
-    num_workers: 0
+    num_workers: 24
     pin_memory: True
     disable: False
   
